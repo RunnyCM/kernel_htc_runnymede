@@ -30,10 +30,8 @@
 
 extern void msm_pm_set_max_sleep_time(int64_t sleep_time_ns);
 
-#if defined(CONFIG_ARCH_QSD8X50)
+#if CONFIG_MSM_AMSS_VERSION >= 6350 || defined(CONFIG_ARCH_QSD8X50)
 #define APP_TIMEREMOTE_PDEV_NAME "rs30000048:00010000"
-#elif defined(CONFIG_ARCH_MSM7X30)
-#define APP_TIMEREMOTE_PDEV_NAME "rs30000048:00040000"
 #else
 #define APP_TIMEREMOTE_PDEV_NAME "rs30000048:0da5b528"
 #endif
@@ -97,8 +95,6 @@ msmrtc_timeremote_set_time(struct device *dev, struct rtc_time *tm)
 				&req, sizeof(req),
 				&rep, sizeof(rep),
 				5 * HZ);
-	if (rc < 0)
-		pr_err("%s: msm_rpc_call_reply fail (%d)\n", __func__, rc);
 	return rc;
 }
 
@@ -124,10 +120,8 @@ msmrtc_timeremote_read_time(struct device *dev, struct rtc_time *tm)
 				&req, sizeof(req),
 				&rep, sizeof(rep),
 				5 * HZ);
-	if (rc < 0) {
-		pr_err("%s: msm_rpc_call_reply fail (%d)\n", __func__, rc);
+	if (rc < 0)
 		return rc;
-	}
 
 	if (!be32_to_cpu(rep.opt_arg)) {
 		printk(KERN_ERR "%s: No data from RTC\n", __func__);

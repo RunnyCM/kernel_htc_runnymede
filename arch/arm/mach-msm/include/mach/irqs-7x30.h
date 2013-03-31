@@ -1,4 +1,4 @@
-/* Copyright (c) 2009-2010, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2009-2010, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -12,6 +12,8 @@
 
 #ifndef __ASM_ARCH_MSM_IRQS_7X30_H
 #define __ASM_ARCH_MSM_IRQS_7X30_H
+
+#define FIQ_START               0
 
 /* MSM ACPU Interrupt Numbers */
 
@@ -141,18 +143,9 @@
 
 #define NR_MSM_IRQS		128
 #define NR_GPIO_IRQS		182
-#ifdef CONFIG_PMIC8058
 #define PMIC8058_IRQ_BASE	(NR_MSM_IRQS + NR_GPIO_IRQS)
 #define NR_PMIC8058_IRQS	256
 #define NR_BOARD_IRQS		NR_PMIC8058_IRQS
-#else /* For Maxim MAX8957 */
-#define MAX8957_IRQ_BASE	(NR_MSM_IRQS + NR_GPIO_IRQS)
-#define NR_MAX8957_TOP_IRQS 13
-#define NR_MAX8957_GRP_IRQS 94 /* 2nd-level IRQs */
-#define NR_MAX8957_IRQS 	(NR_MAX8957_TOP_IRQS +\
-				NR_MAX8957_GRP_IRQS)
-#define NR_BOARD_IRQS		NR_MAX8957_IRQS
-#endif
 
 #define INT_ADSP_A11_SMSM	INT_ADSP_A11
 

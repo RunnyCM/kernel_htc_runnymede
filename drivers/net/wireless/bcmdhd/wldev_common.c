@@ -1,9 +1,9 @@
 /*
  * Common function shared by Linux WEXT, cfg80211 and p2p drivers
  *
- * Copyright (C) 1999-2011, Broadcom Corporation
+ * Copyright (C) 1999-2012, Broadcom Corporation
  * 
- *         Unless you and Broadcom execute a separate written software license
+ *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
  * under the terms of the GNU General Public License version 2 (the "GPL"),
  * available at http://www.broadcom.com/licenses/GPLv2.php, with the
@@ -59,14 +59,8 @@ s32 wldev_ioctl(
 	ioc.buf = arg;
 	ioc.len = len;
 	ioc.set = set;
-#if 0
-	if (arg != NULL) {
-		WLDEV_ERROR(("iovar:%s ioc->len%d cmd->%d type->%s\n",
-			(char *)arg, ioc.len, cmd, set ? "set": "get"));
-	}
-#endif
-	ret = dhd_ioctl_entry_local(dev, &ioc, cmd);
 
+	ret = dhd_ioctl_entry_local(dev, &ioc, cmd);
 
 	return ret;
 }
@@ -90,11 +84,10 @@ s32 wldev_iovar_getbuf(
 	void *param, s32 paramlen, void *buf, s32 buflen, struct mutex* buf_sync)
 {
 	s32 ret = 0;
-	s32 iovar_len = 0;
 	if (buf_sync) {
 		mutex_lock(buf_sync);
 	}
-	iovar_len = wldev_mkiovar(iovar_name, param, paramlen, buf, buflen);
+	wldev_mkiovar(iovar_name, param, paramlen, buf, buflen);
 	ret = wldev_ioctl(dev, WLC_GET_VAR, buf, buflen, FALSE);
 	if (buf_sync)
 		mutex_unlock(buf_sync);
@@ -198,16 +191,17 @@ s32 wldev_mkiovar_bsscfg(
 	return iolen;
 
 }
+
 s32 wldev_iovar_getbuf_bsscfg(
 	struct net_device *dev, s8 *iovar_name,
 	void *param, s32 paramlen, void *buf, s32 buflen, s32 bsscfg_idx, struct mutex* buf_sync)
 {
 	s32 ret = 0;
-	s32 iovar_len = 0;
 	if (buf_sync) {
 		mutex_lock(buf_sync);
 	}
-	iovar_len = wldev_mkiovar_bsscfg(iovar_name, param, paramlen, buf, buflen, bsscfg_idx);
+
+	wldev_mkiovar_bsscfg(iovar_name, param, paramlen, buf, buflen, bsscfg_idx);
 	ret = wldev_ioctl(dev, WLC_GET_VAR, buf, buflen, FALSE);
 	if (buf_sync) {
 		mutex_unlock(buf_sync);
@@ -226,7 +220,6 @@ s32 wldev_iovar_setbuf_bsscfg(
 		mutex_lock(buf_sync);
 	}
 	iovar_len = wldev_mkiovar_bsscfg(iovar_name, param, paramlen, buf, buflen, bsscfg_idx);
-
 	ret = wldev_ioctl(dev, WLC_SET_VAR, buf, iovar_len, TRUE);
 	if (buf_sync) {
 		mutex_unlock(buf_sync);
@@ -369,7 +362,7 @@ int wldev_set_country(
 		return error;
 	}
 	dhd_bus_country_set(dev, &cspec);
-	printk(KERN_INFO "[WLAN] %s: set country for %s as %s rev %d\n",
-		__func__, country_code, cspec.ccode, cspec.rev);
+	WLDEV_ERROR(("%s: set country for %s as %s rev %d\n",
+		__FUNCTION__, country_code, cspec.ccode, cspec.rev));
 	return 0;
 }

@@ -1,7 +1,7 @@
 /* drivers/i2c/busses/i2c-msm.c
  *
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2009, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2009, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -30,8 +30,9 @@
 #include <linux/mutex.h>
 #include <linux/timer.h>
 #include <linux/remote_spinlock.h>
-#include <linux/pm_qos_params.h>
-#include <mach/gpio.h>
+#include <linux/pm_qos.h>
+#include <linux/gpio.h>
+#include <linux/module.h>
 
 
 enum {
@@ -92,12 +93,7 @@ struct msm_i2c_dev {
 	int                          clk_state;
 	void                         *complete;
 
-	struct pm_qos_request_list pm_qos_req;
-
-	int                          last_addr;
-	int                          reg;
-	int                          last_reg;
-	int                          last_flag;
+	struct pm_qos_request pm_qos_req;
 };
 
 static void
@@ -257,14 +253,6 @@ msm_i2c_interrupt(int irq, void *devid)
 	return IRQ_HANDLED;
 
  out_err:
-	dev_err(dev->dev, "[MSM I2C Err] status = 0x%02X, "
-		"addr = 0x%02X, flags = 0x%02X, last_addr = %02X, "
-		"reg = 0x%02X, last_reg = 0x%02X, last_flag = 0x%02X, "
-		"cnt = %d, pos = %d\n",
-		status, dev->msg->addr, dev->msg->flags, dev->last_addr,
-		dev->reg, dev->last_reg, dev->last_flag,
-		dev->cnt, dev->pos);
-
 	dev->err = err;
  out_complete:
 	complete(dev->complete);
@@ -385,9 +373,6 @@ msm_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 	long timeout;
 	unsigned long flags;
 	int check_busy = 1;
-	struct irq_chip *i2c_irq_chip = NULL;
-
-	uint8_t slave_reg = -1;
 
 	del_timer_sync(&dev->pwr_timer);
 	mutex_lock(&dev->mlock);
@@ -408,9 +393,7 @@ msm_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 		/* If other processor did some transactions, we may have
 		 * interrupt pending. Clear it
 		 */
-		i2c_irq_chip = irq_get_chip(dev->irq);
-		if (i2c_irq_chip)
-			i2c_irq_chip->irq_ack(irq_get_irq_data(dev->irq));
+		irq_get_chip(dev->irq)->irq_ack(irq_get_irq_data(dev->irq));
 	}
 
 	if (adap == &dev->adap_pri)
@@ -419,10 +402,6 @@ msm_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 		writel(I2C_INTERFACE_SELECT_INTF_SELECT,
 				dev->base + I2C_INTERFACE_SELECT);
 	enable_irq(dev->irq);
-
-	if (msgs->buf != NULL)
-		slave_reg = msgs->buf[0];
-
 	while (rem) {
 		addr = msgs->addr << 1;
 		if (msgs->flags & I2C_M_RD)
@@ -435,7 +414,6 @@ msm_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 		dev->err = 0;
 		dev->flush_cnt = 0;
 		dev->cnt = msgs->len;
-		dev->reg = slave_reg;
 		dev->complete = &complete;
 		spin_unlock_irqrestore(&dev->lock, flags);
 
@@ -535,10 +513,8 @@ wait_for_int:
 		}
 		if (dev->err) {
 			dev_err(dev->dev,
-				"(%04x) Error during data xfer (%d) "
-				"(%02X, %02X)\n",
-				addr, dev->err,
-				dev->reg, msgs->flags);
+				"(%04x) Error during data xfer (%d)\n",
+				addr, dev->err);
 			ret = dev->err;
 			goto out_err;
 		}
@@ -553,9 +529,6 @@ wait_for_int:
 	ret = num;
  out_err:
 	spin_lock_irqsave(&dev->lock, flags);
-	dev->last_addr = dev->msg->addr;
-	dev->last_reg = dev->reg;
-	dev->last_flag = dev->msg->flags;
 	dev->complete = NULL;
 	dev->msg = NULL;
 	dev->rem = 0;
@@ -663,7 +636,7 @@ msm_i2c_probe(struct platform_device *pdev)
 	spin_lock_init(&dev->lock);
 	platform_set_drvdata(pdev, dev);
 
-	clk_enable(clk);
+	clk_prepare_enable(clk);
 
 	if (pdata->rmutex) {
 		struct remote_mutex_id rmid;
@@ -724,7 +697,8 @@ msm_i2c_probe(struct platform_device *pdev)
 	/* Config GPIOs for primary and secondary lines */
 	pdata->msm_i2c_config_gpio(dev->adap_pri.nr, 1);
 	pdata->msm_i2c_config_gpio(dev->adap_aux.nr, 1);
-	clk_disable(dev->clk);
+	clk_disable_unprepare(dev->clk);
+	clk_prepare(dev->clk);
 	setup_timer(&dev->pwr_timer, msm_i2c_pwr_timer, (unsigned long) dev);
 
 	return 0;
@@ -733,7 +707,7 @@ err_request_irq_failed:
 	i2c_del_adapter(&dev->adap_pri);
 	i2c_del_adapter(&dev->adap_aux);
 err_i2c_add_adapter_failed:
-	clk_disable(clk);
+	clk_disable_unprepare(clk);
 	iounmap(dev->base);
 err_ioremap_failed:
 	kfree(dev);
@@ -763,6 +737,7 @@ msm_i2c_remove(struct platform_device *pdev)
 	free_irq(dev->irq, dev);
 	i2c_del_adapter(&dev->adap_pri);
 	i2c_del_adapter(&dev->adap_aux);
+	clk_unprepare(dev->clk);
 	clk_put(dev->clk);
 	iounmap(dev->base);
 	kfree(dev);
@@ -786,6 +761,7 @@ static int msm_i2c_suspend(struct platform_device *pdev, pm_message_t state)
 		del_timer_sync(&dev->pwr_timer);
 		if (dev->clk_state != 0)
 			msm_i2c_pwr_mgmt(dev, 0);
+		clk_unprepare(dev->clk);
 	}
 
 	return 0;
@@ -794,6 +770,7 @@ static int msm_i2c_suspend(struct platform_device *pdev, pm_message_t state)
 static int msm_i2c_resume(struct platform_device *pdev)
 {
 	struct msm_i2c_dev *dev = platform_get_drvdata(pdev);
+	clk_prepare(dev->clk);
 	dev->suspended = 0;
 	return 0;
 }

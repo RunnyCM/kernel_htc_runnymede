@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2011, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2008-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -17,14 +17,15 @@
 #include <linux/module.h>
 #include <linux/mempool.h>
 #include <linux/mutex.h>
-#include <linux/wakelock.h>
+#include <linux/spinlock.h>
 #include <linux/workqueue.h>
+#include <linux/sched.h>
 #include <mach/msm_smd.h>
 #include <asm/atomic.h>
-#include <mach/usbdiag.h>
 #include <asm/mach-types.h>
 /* Size of the USB buffers used for read and write*/
 #define USB_MAX_OUT_BUF 4096
+#define APPS_BUF_SIZE	2000
 #define IN_BUF_SIZE		16384
 #define MAX_IN_BUF_SIZE	32768
 #define MAX_SYNC_OBJ_NAME_SIZE	32
@@ -35,26 +36,39 @@
 #define POOL_TYPE_COPY		1
 #define POOL_TYPE_HDLC		2
 #define POOL_TYPE_WRITE_STRUCT	4
+#define POOL_TYPE_HSIC		8
+#define POOL_TYPE_HSIC_WRITE	16
 #define POOL_TYPE_ALL		7
 #define MODEM_DATA 		1
 #define QDSP_DATA  		2
 #define APPS_DATA  		3
 #define SDIO_DATA		4
 #define WCNSS_DATA		5
+#define HSIC_DATA		6
+#define SMUX_DATA		7
 #define MODEM_PROC		0
 #define APPS_PROC		1
 #define QDSP_PROC		2
 #define WCNSS_PROC		3
-#define MSG_MASK_SIZE 8000
+#define MSG_MASK_SIZE 10000
 #define LOG_MASK_SIZE 8000
 #define EVENT_MASK_SIZE 1000
 #define USER_SPACE_DATA 8000
 #define PKT_SIZE 4096
-#define MAX_EQUIP_ID 12
+#define MAX_EQUIP_ID 15
+#define DIAG_CTRL_MSG_LOG_MASK	9
+#define DIAG_CTRL_MSG_EVENT_MASK	10
+#define DIAG_CTRL_MSG_F3_MASK	11
+#define CONTROL_CHAR	0x7E
+
+#define DIAG_CON_APSS (0x0001)	/* Bit mask for APSS */
+#define DIAG_CON_MPSS (0x0002)	/* Bit mask for MPSS */
+#define DIAG_CON_LPASS (0x0004)	/* Bit mask for LPASS */
+#define DIAG_CON_WCNSS (0x0008)	/* Bit mask for WCNSS */
 
 /* Maximum number of pkt reg supported at initialization*/
-extern unsigned int diag_max_registration;
-extern unsigned int diag_threshold_registration;
+extern unsigned int diag_max_reg;
+extern unsigned int diag_threshold_reg;
 
 #define APPEND_DEBUG(ch) \
 do {							\
@@ -129,12 +143,18 @@ struct diagchar_dev {
 	struct diag_client_map *client_map;
 	int *data_ready;
 	int num_clients;
+	int polling_reg_flag;
 	struct diag_write_device *buf_tbl;
-	spinlock_t diagchar_lock;
-#ifdef CONFIG_DIAG_SDIO_PIPE
-	struct cdev *cdev_mdm;
-	int num_mdmclients;
-#endif
+	int use_device_tree;
+	/* DCI related variables */
+	struct diag_dci_tbl *dci_tbl;
+	struct dci_notification_tbl *dci_notify_tbl;
+	int dci_tag;
+	int dci_client_id;
+	struct mutex dci_mutex;
+	int num_dci_client;
+	unsigned char *apps_dci_buf;
+	int dci_state;
 	/* Memory pool parameters */
 	unsigned int itemsize;
 	unsigned int poolsize;
@@ -152,7 +172,11 @@ struct diagchar_dev {
 	int count_hdlc_pool;
 	int count_write_struct_pool;
 	int used;
-
+	/* Buffers for masks */
+	struct mutex diag_cntl_mutex;
+	struct diag_ctrl_event_mask *event_mask;
+	struct diag_ctrl_log_mask *log_mask;
+	struct diag_ctrl_msg_mask *msg_mask;
 	/* State for diag forwarding */
 	unsigned char *buf_in_1;
 	unsigned char *buf_in_2;
@@ -160,17 +184,20 @@ struct diagchar_dev {
 	unsigned char *buf_in_qdsp_1;
 	unsigned char *buf_in_qdsp_2;
 	unsigned char *buf_in_qdsp_cntl;
-	unsigned char *buf_in_wcnss;
+	unsigned char *buf_in_wcnss_1;
+	unsigned char *buf_in_wcnss_2;
 	unsigned char *buf_in_wcnss_cntl;
-	struct mutex diagcharmdm_mutex;
-	wait_queue_head_t mdmwait_q;
-	struct diag_client_map *mdmclient_map;
-	int *mdmdata_ready;
+	unsigned char *buf_in_dci;
 	unsigned char *usb_buf_out;
 	unsigned char *apps_rsp_buf;
 	unsigned char *user_space_data;
+	/* buffer for updating mask to peripherals */
+	unsigned char *buf_msg_mask_update;
+	unsigned char *buf_log_mask_update;
+	unsigned char *buf_event_mask_update;
 	smd_channel_t *ch;
 	smd_channel_t *ch_cntl;
+	smd_channel_t *ch_dci;
 	smd_channel_t *chqdsp;
 	smd_channel_t *chqdsp_cntl;
 	smd_channel_t *ch_wcnss;
@@ -179,7 +206,9 @@ struct diagchar_dev {
 	int in_busy_2;
 	int in_busy_qdsp_1;
 	int in_busy_qdsp_2;
-	int in_busy_wcnss;
+	int in_busy_wcnss_1;
+	int in_busy_wcnss_2;
+	int in_busy_dci;
 	int read_len_legacy;
 	unsigned char *hdlc_buf;
 	unsigned hdlc_count;
@@ -191,7 +220,6 @@ struct diagchar_dev {
 	struct work_struct diag_read_work;
 #endif
 	struct workqueue_struct *diag_wq;
-	struct wake_lock wake_lock;
 	struct work_struct diag_drain_work;
 	struct work_struct diag_read_smd_work;
 	struct work_struct diag_read_smd_cntl_work;
@@ -199,6 +227,14 @@ struct diagchar_dev {
 	struct work_struct diag_read_smd_qdsp_cntl_work;
 	struct work_struct diag_read_smd_wcnss_work;
 	struct work_struct diag_read_smd_wcnss_cntl_work;
+	struct workqueue_struct *diag_cntl_wq;
+	struct work_struct diag_modem_mask_update_work;
+	struct work_struct diag_qdsp_mask_update_work;
+	struct work_struct diag_wcnss_mask_update_work;
+	struct work_struct diag_read_smd_dci_work;
+	struct work_struct diag_clean_modem_reg_work;
+	struct work_struct diag_clean_lpass_reg_work;
+	struct work_struct diag_clean_wcnss_reg_work;
 	uint8_t *msg_masks;
 	uint8_t *log_masks;
 	int log_masks_length;
@@ -212,47 +248,69 @@ struct diagchar_dev {
 	struct diag_request *write_ptr_svc;
 	struct diag_request *write_ptr_qdsp_1;
 	struct diag_request *write_ptr_qdsp_2;
-	struct diag_request *write_ptr_wcnss;
+	struct diag_request *write_ptr_wcnss_1;
+	struct diag_request *write_ptr_wcnss_2;
+	struct diag_write_device *write_ptr_dci;
 	int logging_mode;
+	int mask_check;
 	int logging_process_id;
-#if DIAG_XPST
-	unsigned char nohdlc;
-	unsigned char in_busy_dmrounter;
-	struct mutex smd_lock;
-	unsigned char init_done;
-	unsigned char is2ARM11;
-#endif
+	struct task_struct *socket_process;
 #ifdef CONFIG_DIAG_SDIO_PIPE
-	unsigned char *buf_in_sdio_1;
-	unsigned char *buf_in_sdio_2;
+	unsigned char *buf_in_sdio;
 	unsigned char *usb_buf_mdm_out;
 	struct sdio_channel *sdio_ch;
 	int read_len_mdm;
-	int in_busy_sdio_1;
-	int in_busy_sdio_2;
+	int in_busy_sdio;
 	struct usb_diag_ch *mdm_ch;
 	struct work_struct diag_read_mdm_work;
 	struct workqueue_struct *diag_sdio_wq;
 	struct work_struct diag_read_sdio_work;
-	struct work_struct diag_remove_sdio_work;
+	struct work_struct diag_close_sdio_work;
 	struct diag_request *usb_read_mdm_ptr;
-	struct diag_request *write_ptr_mdm_1;
-	struct diag_request *write_ptr_mdm_2;
+	struct diag_request *write_ptr_mdm;
 #endif
-	u64 diag_smd_count; /* from smd */
-	u64 diag_qdsp_count; /* from qdsp */
-	void (*enable_sd_log)(unsigned int enable);
-	int qxdm2sd_drop;
+#ifdef CONFIG_DIAG_BRIDGE_CODE
+	/* SGLTE variables */
+	int lcid;
+	unsigned char *buf_in_smux;
+	int in_busy_smux;
+	int diag_smux_enabled;
+	int smux_connected;
+	struct diag_request *write_ptr_mdm;
+	/* HSIC variables */
+	int hsic_ch;
+	int hsic_inited;
+	int hsic_device_enabled;
+	int hsic_device_opened;
+	int hsic_suspend;
+	int in_busy_hsic_read_on_device;
+	int in_busy_hsic_write;
+	struct work_struct diag_read_hsic_work;
+	struct mutex bridge_mutex;
+	/* USB MDM channel variables */
+	int usb_mdm_connected;
+	int read_len_mdm;
+	int write_len_mdm;
+	unsigned char *usb_buf_mdm_out;
+	struct usb_diag_ch *mdm_ch;
+	struct workqueue_struct *diag_bridge_wq;
+	struct work_struct diag_read_mdm_work;
+	struct work_struct diag_disconnect_work;
+	struct work_struct diag_usb_read_complete_work;
+	struct diag_request *usb_read_mdm_ptr;
+	int count_hsic_pool;
+	int count_hsic_write_pool;
+	unsigned int poolsize_hsic;
+	unsigned int poolsize_hsic_write;
+	unsigned int itemsize_hsic;
+	unsigned int itemsize_hsic_write;
+	mempool_t *diag_hsic_pool;
+	mempool_t *diag_hsic_write_pool;
+	int num_hsic_buf_tbl_entries;
+	struct diag_write_device *hsic_buf_tbl;
+	spinlock_t hsic_spinlock;
+#endif
 };
 
-#define EPST_FUN 1
-#define HPST_FUN 0
-
-#if defined(CONFIG_ARCH_MSM8X60) || defined(CONFIG_ARCH_MSM8960) || defined(CONFIG_ARCH_MSM7X27A)
-#define	SMDDIAG_NAME "DIAG"
-#else
-#define	SMDDIAG_NAME "SMD_DIAG"
-#endif
 extern struct diagchar_dev *driver;
-extern int is_wcnss_used;
 #endif

@@ -95,7 +95,6 @@ struct tag_serialnr {
 
 struct tag_revision {
 	__u32 rev;
-	__u32 rev2;
 };
 
 /* initial values for vesafb-type framebuffers. see struct screen_info
@@ -144,13 +143,6 @@ struct tag_memclk {
 	__u32 fmemclk;
 };
 
-/* Light sensor calibration value */
-#define ATAG_ALS	0x5441001b
-
-struct tag_als_kadc {
-	__u32 kadc;
-};
-
 struct tag {
 	struct tag_header hdr;
 	union {
@@ -163,7 +155,7 @@ struct tag {
 		struct tag_revision	revision;
 		struct tag_videolfb	videolfb;
 		struct tag_cmdline	cmdline;
-		struct tag_als_kadc als_kadc;
+
 		/*
 		 * Acorn specific
 		 */
@@ -195,12 +187,12 @@ struct tagtable {
 
 #define __tag __used __attribute__((__section__(".taglist.init")))
 #define __tagtable(tag, fn) \
-static struct tagtable __tagtable_##fn __tag = { tag, fn }
+static const struct tagtable __tagtable_##fn __tag = { tag, fn }
 
 /*
  * Memory map description
  */
-#define NR_BANKS 8
+#define NR_BANKS	CONFIG_ARM_NR_BANKS
 
 struct membank {
 	phys_addr_t start;

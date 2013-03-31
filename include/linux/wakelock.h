@@ -28,11 +28,11 @@
 
 enum {
 	WAKE_LOCK_SUSPEND, /* Prevent suspend */
-	WAKE_LOCK_IDLE,    /* Prevent low power idle */
 	WAKE_LOCK_TYPE_COUNT
 };
 
 struct wake_lock {
+#ifdef CONFIG_HAS_WAKELOCK
 	struct list_head    link;
 	int                 flags;
 	const char         *name;
@@ -47,6 +47,7 @@ struct wake_lock {
 		ktime_t         max_time;
 		ktime_t         last_time;
 	} stat;
+#endif
 #endif
 };
 
@@ -83,10 +84,6 @@ static inline void wake_unlock(struct wake_lock *lock) {}
 static inline int wake_lock_active(struct wake_lock *lock) { return 0; }
 static inline long has_wake_lock(int type) { return 0; }
 
-#endif
-
-#ifdef CONFIG_ARCH_MSM8X60_LTE
-extern void htc_print_active_wake_locks(int type);
 #endif
 
 #endif

@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2009, 2011 Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2009, 2011 The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -24,6 +24,8 @@
 
 #include <asm/cacheflush.h>
 #include <asm/io.h>
+#include <asm/exception.h>
+#include <asm/cp15.h>
 
 #include <mach/hardware.h>
 
@@ -175,11 +177,8 @@ static uint8_t msm_irq_to_smsm[NR_IRQS] = {
 	[INT_PWB_I2C] = 5,
 	[INT_SDC1_0] = 6,
 	[INT_SDC1_1] = 7,
-#ifdef CONFIG_MACH_PRIMODS
-	[INT_SDC2_0] = 32,
-#else
 	[INT_SDC2_0] = 8,
-#endif
+
 	[INT_SDC2_1] = 9,
 	[INT_ADSP_A9_A11] = 10,
 	[INT_UART1] = 11,
@@ -217,6 +216,9 @@ static uint8_t msm_irq_to_smsm[NR_IRQS] = {
 	[INT_GPIO_GROUP2] = SMSM_FAKE_IRQ,
 	[INT_A9_M2A_0] = SMSM_FAKE_IRQ,
 	[INT_A9_M2A_1] = SMSM_FAKE_IRQ,
+#ifdef CONFIG_ARCH_MSM7X30
+	[INT_A9_M2A_2] = SMSM_FAKE_IRQ,
+#endif
 	[INT_A9_M2A_5] = SMSM_FAKE_IRQ,
 	[INT_GP_TIMER_EXP] = SMSM_FAKE_IRQ,
 	[INT_DEBUG_TIMER_EXP] = SMSM_FAKE_IRQ,
@@ -611,6 +613,33 @@ void __init msm_init_irq(void)
 	/* enable interrupt controller */
 	writel(3, VIC_INT_MASTEREN);
 	mb();
+}
+
+static inline void msm_vic_handle_irq(void __iomem *base_addr, struct pt_regs
+		*regs)
+{
+	u32 irqnr;
+
+	do {
+		/* 0xD0 has irq# or old irq# if the irq has been handled
+		 * 0xD4 has irq# or -1 if none pending *but* if you just
+		 * read 0xD4 you never get the first irq for some reason
+		 */
+		irqnr = readl_relaxed(base_addr + 0xD0);
+		irqnr = readl_relaxed(base_addr + 0xD4);
+		if (irqnr == -1)
+			break;
+		handle_IRQ(irqnr, regs);
+	} while (1);
+}
+
+/* enable imprecise aborts */
+#define local_cpsie_enable()  __asm__ __volatile__("cpsie a    @ enable")
+
+asmlinkage void __exception_irq_entry vic_handle_irq(struct pt_regs *regs)
+{
+	local_cpsie_enable();
+	msm_vic_handle_irq((void __iomem *)MSM_VIC_BASE, regs);
 }
 
 #if defined(CONFIG_MSM_FIQ_SUPPORT)

@@ -3,21 +3,12 @@
  *
  * Copyright (C) 2003-2008 Alan Stern
  * Copyeight (C) 2009 Samsung Electronics
- * Author: Michal Nazarewicz (m.nazarewicz@samsung.com)
+ * Author: Michal Nazarewicz (mina86@mina86.com)
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 
@@ -50,6 +41,12 @@
  * When FSG_BUFFHD_STATIC_BUFFER is defined when this file is included
  * the fsg_buffhd structure's buf field will be an array of FSG_BUFLEN
  * characters rather then a pointer to void.
+ */
+
+/*
+ * When USB_GADGET_DEBUG_FILES is defined the module param num_buffers
+ * sets the number of pipeline buffers (length of the fsg_buffhd array).
+ * The valid range of num_buffers is: num >= 2 && num <= 4.
  */
 
 
@@ -148,47 +145,7 @@
 
 #endif /* DUMP_MSGS */
 
-
-
-
-
 /*-------------------------------------------------------------------------*/
-
-/* Bulk-only data structures */
-
-/* Command Block Wrapper */
-struct fsg_bulk_cb_wrap {
-	__le32	Signature;		/* Contains 'USBC' */
-	u32	Tag;			/* Unique per command id */
-	__le32	DataTransferLength;	/* Size of the data */
-	u8	Flags;			/* Direction in bit 7 */
-	u8	Lun;			/* LUN (normally 0) */
-	u8	Length;			/* Of the CDB, <= MAX_COMMAND_SIZE */
-	u8	CDB[16];		/* Command Data Block */
-};
-
-#define USB_BULK_CB_WRAP_LEN	31
-#define USB_BULK_CB_SIG		0x43425355	/* Spells out USBC */
-#define USB_BULK_IN_FLAG	0x80
-
-/* Command Status Wrapper */
-struct bulk_cs_wrap {
-	__le32	Signature;		/* Should = 'USBS' */
-	u32	Tag;			/* Same as original command */
-	__le32	Residue;		/* Amount not transferred */
-	u8	Status;			/* See below */
-};
-
-#define USB_BULK_CS_WRAP_LEN	13
-#define USB_BULK_CS_SIG		0x53425355	/* Spells out 'USBS' */
-#define USB_STATUS_PASS		0
-#define USB_STATUS_FAIL		1
-#define USB_STATUS_PHASE_ERROR	2
-
-/* Bulk-only class specific requests */
-#define USB_BULK_RESET_REQUEST		0xff
-#define USB_BULK_GET_MAX_LUN_REQUEST	0xfe
-
 
 /* CBI Interrupt data structure */
 struct interrupt_data {
@@ -205,17 +162,6 @@ struct interrupt_data {
 /* Length of a SCSI Command Data Block */
 #define MAX_COMMAND_SIZE	16
 
-#ifdef CONFIG_PASCAL_DETECT
-#define SC_PASCAL_MODE		0xff
-#endif
-#ifdef CONFIG_LISMO
-/* [ADD START] 2012/01/17 KDDI : Android ICS */
-/* [ADD START] 2011/04/15 KDDI : define vendor command code */
-#define SC_VENDOR_START			0xe4
-#define SC_VENDOR_END			0xef
-/* [ADD END] 2011/04/15 KDDI : define vendor command code */
-/* [ADD END] 2012/01/17 KDDI : Android ICS */
-#endif
 /* SCSI Sense Key/Additional Sense Code/ASC Qualifier values */
 #define SS_NO_SENSE				0
 #define SS_COMMUNICATION_FAILURE		0x040800
@@ -236,50 +182,9 @@ struct interrupt_data {
 #define ASC(x)		((u8) ((x) >> 8))
 #define ASCQ(x)		((u8) (x))
 
-#ifdef CONFIG_LISMO
-/* [ADD START] 2012/01/17 KDDI : Android ICS */
-/* [ADD START] 2011/04/15 KDDI : define count of vendor command */
-#define VENDOR_CMD_NR	(SC_VENDOR_END - SC_VENDOR_START + 1)
-/* [ADD END] 2011/04/15 KDDI : define count of vendor command */
-/* [ADD START] 2011/05/18 KDDI : define inquiry command init response */
-#define INQUIRY_VENDOR_INIT	"LISMOSC1"
-/* [ADD END] 2011/05/18 KDDI : define inquiry command init response */
-
-/* [ADD START] 2011/05/26 KDDI : inquiry respons [Vendor specific]length)*/
-#define INQUIRY_VENDOR_SPECIFIC_SIZE 20 /* Size of InquiryResponse VendorSpecific */
-/* [ADD END] 2011/05/26 KDDI : inquiry respons [Vendor specific]length)*/
-
-/* [ADD START] 2011/08/23 KDDI : buffer size alloc at __init() */
-#define ALLOC_INI_SIZE  0x101000
-#define ALLOC_CMD_CNT   1
-/* [ADD ENDT] 2011/08/23 KDDI : buffer size alloc at __init() */
-/* [ADD END] 2012/01/17 KDDI : Android ICS */
 
 /*-------------------------------------------------------------------------*/
 
-/* [ADD START] 2012/01/17 KDDI : Android ICS */
-/* [ADD START] 2011/04/15 KDDI : etc define for vendor command */
-struct op_desc {
-	struct device	dev;
-	unsigned long	flags;
-/* flag symbols are bit numbers */
-#define FLAG_IS_READ	0
-#define FLAG_IS_WRITE	1
-#define FLAG_EXPORT	2	/* protected by sysfs_lock */
-
-	char			*buffer;
-	size_t			len;
-	struct bin_attribute	dev_bin_attr_buffer;
-	unsigned long 		update;
-	struct work_struct	work;
-	struct sysfs_dirent	*value_sd;
-};
-static void op_release(struct device *dev);
-
-static DEFINE_MUTEX(sysfs_lock);
-/* [ADD END] 2011/04/15 KDDI : etc define for vendor command */
-/* [ADD END] 2012/01/17 KDDI : Android ICS */
-#endif
 
 struct fsg_lun {
 	struct file	*filp;
@@ -299,6 +204,8 @@ struct fsg_lun {
 	u32		sense_data_info;
 	u32		unit_attention_data;
 
+	unsigned int	blkbits;	/* Bits of logical block size of bound block device */
+	unsigned int	blksize;	/* logical block size of bound block device */
 	struct device	dev;
 #ifdef CONFIG_USB_MSC_PROFILING
 	spinlock_t	lock;
@@ -311,21 +218,6 @@ struct fsg_lun {
 	} perf;
 
 #endif
-#ifdef CONFIG_LISMO
-/* [ADD START] 2012/01/17 KDDI : Android ICS */
-/* [ADD START] 2011/04/15 KDDI : add define to device struct */
-	struct op_desc *op_desc[VENDOR_CMD_NR];
-
-/* [CHANGE START] 2011/05/26 KDDI : add Vendor specific length */
-	/* Vendor specific and NUL byte */
-	char inquiry_vendor[INQUIRY_VENDOR_SPECIFIC_SIZE + 1];
-/* [CHANGE END] 2011/05/26 KDDI : add Vendor specific length */
-/* [ADD END] 2011/04/15 KDDI : add define to device struct */
-/* [ADD START] 2011/08/23 KDDI : add buffer malloc table */
-	char   *reserve_buf[VENDOR_CMD_NR];
-/* [ADD ENDT] 2011/08/23 KDDI : add buffer malloc table */
-/* [ADD END] 2012/01/17 KDDI : Android ICS */
-#endif
 };
 
 #define fsg_lun_is_open(curlun)	((curlun)->filp != NULL)
@@ -335,23 +227,40 @@ static struct fsg_lun *fsg_lun_from_dev(struct device *dev)
 	return container_of(dev, struct fsg_lun, dev);
 }
 
-#ifdef CONFIG_LISMO
-/* [ADD START] 2012/01/17 KDDI : Android ICS */
-/* [ADD START] 2011/04/15 KDDI : define container(adress_get) */
-static struct op_desc *dev_to_desc(struct device *dev)
-{
-	return container_of(dev, struct op_desc, dev);
-}
-/* [ADD END] 2011/04/15 KDDI : define container(adress_get)*/
-/* [ADD END] 2012/01/17 KDDI : Android ICS */
-#endif
 
 /* Big enough to hold our biggest descriptor */
 #define EP0_BUFSIZE	256
 #define DELAYED_STATUS	(EP0_BUFSIZE + 999)	/* An impossibly large value */
 
-/* Number of buffers for CBW, DATA and CSW */
-#define FSG_NUM_BUFFERS    8
+#ifdef CONFIG_USB_CSW_HACK
+#define fsg_num_buffers		4
+#else
+#ifdef CONFIG_USB_GADGET_DEBUG_FILES
+
+static unsigned int fsg_num_buffers = CONFIG_USB_GADGET_STORAGE_NUM_BUFFERS;
+module_param_named(num_buffers, fsg_num_buffers, uint, S_IRUGO);
+MODULE_PARM_DESC(num_buffers, "Number of pipeline buffers");
+
+#else
+
+/*
+ * Number of buffers we will use.
+ * 2 is usually enough for good buffering pipeline
+ */
+#define fsg_num_buffers	CONFIG_USB_GADGET_STORAGE_NUM_BUFFERS
+
+#endif /* CONFIG_USB_DEBUG */
+#endif /* CONFIG_USB_CSW_HACK */
+
+/* check if fsg_num_buffers is within a valid range */
+static inline int fsg_num_buffers_validate(void)
+{
+	if (fsg_num_buffers >= 2 && fsg_num_buffers <= 4)
+		return 0;
+	pr_err("fsg_num_buffers %u is out of range (%d to %d)\n",
+	       fsg_num_buffers, 2 ,4);
+	return -EINVAL;
+}
 
 /* Default size of buffer length. */
 #define FSG_BUFLEN	((u32)16384)
@@ -581,12 +490,128 @@ static struct usb_descriptor_header *fsg_hs_function[] = {
 	NULL,
 };
 
+static struct usb_endpoint_descriptor
+fsg_ss_bulk_in_desc = {
+	.bLength =		USB_DT_ENDPOINT_SIZE,
+	.bDescriptorType =	USB_DT_ENDPOINT,
+
+	/* bEndpointAddress copied from fs_bulk_in_desc during fsg_bind() */
+	.bmAttributes =		USB_ENDPOINT_XFER_BULK,
+	.wMaxPacketSize =	cpu_to_le16(1024),
+};
+
+static struct usb_ss_ep_comp_descriptor fsg_ss_bulk_in_comp_desc = {
+	.bLength =		sizeof(fsg_ss_bulk_in_comp_desc),
+	.bDescriptorType =	USB_DT_SS_ENDPOINT_COMP,
+
+	/*.bMaxBurst =		DYNAMIC, */
+};
+
+static struct usb_endpoint_descriptor
+fsg_ss_bulk_out_desc = {
+	.bLength =		USB_DT_ENDPOINT_SIZE,
+	.bDescriptorType =	USB_DT_ENDPOINT,
+
+	/* bEndpointAddress copied from fs_bulk_out_desc during fsg_bind() */
+	.bmAttributes =		USB_ENDPOINT_XFER_BULK,
+	.wMaxPacketSize =	cpu_to_le16(1024),
+};
+
+static struct usb_ss_ep_comp_descriptor fsg_ss_bulk_out_comp_desc = {
+	.bLength =		sizeof(fsg_ss_bulk_in_comp_desc),
+	.bDescriptorType =	USB_DT_SS_ENDPOINT_COMP,
+
+	/*.bMaxBurst =		DYNAMIC, */
+};
+
+#ifndef FSG_NO_INTR_EP
+
+static struct usb_endpoint_descriptor
+fsg_ss_intr_in_desc = {
+	.bLength =		USB_DT_ENDPOINT_SIZE,
+	.bDescriptorType =	USB_DT_ENDPOINT,
+
+	/* bEndpointAddress copied from fs_intr_in_desc during fsg_bind() */
+	.bmAttributes =		USB_ENDPOINT_XFER_INT,
+	.wMaxPacketSize =	cpu_to_le16(2),
+	.bInterval =		9,	/* 2**(9-1) = 256 uframes -> 32 ms */
+};
+
+static struct usb_ss_ep_comp_descriptor fsg_ss_intr_in_comp_desc = {
+	.bLength =		sizeof(fsg_ss_bulk_in_comp_desc),
+	.bDescriptorType =	USB_DT_SS_ENDPOINT_COMP,
+
+	.wBytesPerInterval =	cpu_to_le16(2),
+};
+
+#ifndef FSG_NO_OTG
+#  define FSG_SS_FUNCTION_PRE_EP_ENTRIES	2
+#else
+#  define FSG_SS_FUNCTION_PRE_EP_ENTRIES	1
+#endif
+
+#endif
+
+static __maybe_unused struct usb_ext_cap_descriptor fsg_ext_cap_desc = {
+	.bLength =		USB_DT_USB_EXT_CAP_SIZE,
+	.bDescriptorType =	USB_DT_DEVICE_CAPABILITY,
+	.bDevCapabilityType =	USB_CAP_TYPE_EXT,
+
+	.bmAttributes =		cpu_to_le32(USB_LPM_SUPPORT),
+};
+
+static __maybe_unused struct usb_ss_cap_descriptor fsg_ss_cap_desc = {
+	.bLength =		USB_DT_USB_SS_CAP_SIZE,
+	.bDescriptorType =	USB_DT_DEVICE_CAPABILITY,
+	.bDevCapabilityType =	USB_SS_CAP_TYPE,
+
+	/* .bmAttributes = LTM is not supported yet */
+
+	.wSpeedSupported =	cpu_to_le16(USB_LOW_SPEED_OPERATION
+		| USB_FULL_SPEED_OPERATION
+		| USB_HIGH_SPEED_OPERATION
+		| USB_5GBPS_OPERATION),
+	.bFunctionalitySupport = USB_LOW_SPEED_OPERATION,
+	.bU1devExitLat =	USB_DEFAULT_U1_DEV_EXIT_LAT,
+	.bU2DevExitLat =	cpu_to_le16(USB_DEFAULT_U2_DEV_EXIT_LAT),
+};
+
+static __maybe_unused struct usb_bos_descriptor fsg_bos_desc = {
+	.bLength =		USB_DT_BOS_SIZE,
+	.bDescriptorType =	USB_DT_BOS,
+
+	.wTotalLength =		cpu_to_le16(USB_DT_BOS_SIZE
+				+ USB_DT_USB_EXT_CAP_SIZE
+				+ USB_DT_USB_SS_CAP_SIZE),
+
+	.bNumDeviceCaps =	2,
+};
+
+static struct usb_descriptor_header *fsg_ss_function[] = {
+#ifndef FSG_NO_OTG
+	(struct usb_descriptor_header *) &fsg_otg_desc,
+#endif
+	(struct usb_descriptor_header *) &fsg_intf_desc,
+	(struct usb_descriptor_header *) &fsg_ss_bulk_in_desc,
+	(struct usb_descriptor_header *) &fsg_ss_bulk_in_comp_desc,
+	(struct usb_descriptor_header *) &fsg_ss_bulk_out_desc,
+	(struct usb_descriptor_header *) &fsg_ss_bulk_out_comp_desc,
+#ifndef FSG_NO_INTR_EP
+	(struct usb_descriptor_header *) &fsg_ss_intr_in_desc,
+	(struct usb_descriptor_header *) &fsg_ss_intr_in_comp_desc,
+#endif
+	NULL,
+};
+
 /* Maxpacket and other transfer characteristics vary by speed. */
-static struct usb_endpoint_descriptor *
+static __maybe_unused struct usb_endpoint_descriptor *
 fsg_ep_desc(struct usb_gadget *g, struct usb_endpoint_descriptor *fs,
-		struct usb_endpoint_descriptor *hs)
+		struct usb_endpoint_descriptor *hs,
+		struct usb_endpoint_descriptor *ss)
 {
-	if (gadget_is_dualspeed(g) && g->speed == USB_SPEED_HIGH)
+	if (gadget_is_superspeed(g) && g->speed == USB_SPEED_SUPER)
+		return ss;
+	else if (gadget_is_dualspeed(g) && g->speed == USB_SPEED_HIGH)
 		return hs;
 	return fs;
 }
@@ -668,13 +693,24 @@ static int fsg_lun_open(struct fsg_lun *curlun, const char *filename)
 		rc = (int) size;
 		goto out;
 	}
-	num_sectors = size >> 9;	/* File size in 512-byte blocks */
+
+	if (curlun->cdrom) {
+		curlun->blksize = 2048;
+		curlun->blkbits = 11;
+	} else if (inode->i_bdev) {
+		curlun->blksize = bdev_logical_block_size(inode->i_bdev);
+		curlun->blkbits = blksize_bits(curlun->blksize);
+	} else {
+		curlun->blksize = 512;
+		curlun->blkbits = 9;
+	}
+
+	num_sectors = size >> curlun->blkbits; /* File size in logic-block-size blocks */
 	min_sectors = 1;
 	if (curlun->cdrom) {
-		num_sectors &= ~3;	/* Reduce to a multiple of 2048 */
-		min_sectors = 300*4;	/* Smallest track is 300 frames */
-		if (num_sectors >= 256*60*75*4) {
-			num_sectors = (256*60*75 - 1) * 4;
+		min_sectors = 300;	/* Smallest track is 300 frames */
+		if (num_sectors >= 256*60*75) {
+			num_sectors = 256*60*75 - 1;
 			LINFO(curlun, "file too big: %s\n", filename);
 			LINFO(curlun, "using only first %d blocks\n",
 					(int) num_sectors);
@@ -719,16 +755,10 @@ static void fsg_lun_close(struct fsg_lun *curlun)
 static int fsg_lun_fsync_sub(struct fsg_lun *curlun)
 {
 	struct file	*filp = curlun->filp;
-	int ret = 0;
 
 	if (curlun->ro || !filp)
 		return 0;
-
-	printk(KERN_DEBUG "vfs_fsync++\n");
-	ret = vfs_fsync(filp, 1);
-	printk(KERN_DEBUG "vfs_fsync--\n");
-
-	return ret;
+	return vfs_fsync(filp, 1);
 }
 
 static void store_cdrom_address(u8 *dest, int msf, u32 addr)
@@ -895,7 +925,6 @@ static ssize_t fsg_store_file(struct device *dev, struct device_attribute *attr,
 	int		rc = 0;
 
 
-	printk(KERN_INFO "[USB] store_file: \"%s\" to %s\n", buf, dev->kobj.name);
 #ifndef CONFIG_USB_ANDROID_MASS_STORAGE
 	/* disabled in android because we need to allow closing the backing file
 	 * if the media was removed

@@ -5,7 +5,6 @@
 #define _TRACE_WRITEBACK_H
 
 #include <linux/backing-dev.h>
-#include <linux/device.h>
 #include <linux/writeback.h>
 
 #define show_inode_state(state)					\
@@ -20,6 +19,16 @@
 		{I_SYNC,		"I_SYNC"},		\
 		{I_REFERENCED,		"I_REFERENCED"}		\
 	)
+
+#define WB_WORK_REASON							\
+		{WB_REASON_BACKGROUND,		"background"},		\
+		{WB_REASON_TRY_TO_FREE_PAGES,	"try_to_free_pages"},	\
+		{WB_REASON_SYNC,		"sync"},		\
+		{WB_REASON_PERIODIC,		"periodic"},		\
+		{WB_REASON_LAPTOP_TIMER,	"laptop_timer"},	\
+		{WB_REASON_FREE_MORE_MEM,	"free_more_memory"},	\
+		{WB_REASON_FS_FREE_SPACE,	"fs_free_space"},	\
+		{WB_REASON_FORKER_THREAD,	"forker_thread"}
 
 struct wb_writeback_work;
 
@@ -58,7 +67,7 @@ DECLARE_EVENT_CLASS(writeback_work_class,
 		  __entry->for_kupdate,
 		  __entry->range_cyclic,
 		  __entry->for_background,
-		  wb_reason_name[__entry->reason]
+		  __print_symbolic(__entry->reason, WB_WORK_REASON)
 	)
 );
 #define DEFINE_WRITEBACK_WORK_EVENT(name) \
@@ -110,30 +119,6 @@ DEFINE_WRITEBACK_EVENT(writeback_bdi_register);
 DEFINE_WRITEBACK_EVENT(writeback_bdi_unregister);
 DEFINE_WRITEBACK_EVENT(writeback_thread_start);
 DEFINE_WRITEBACK_EVENT(writeback_thread_stop);
-DEFINE_WRITEBACK_EVENT(balance_dirty_start);
-DEFINE_WRITEBACK_EVENT(balance_dirty_wait);
-
-TRACE_EVENT(balance_dirty_written,
-
-	TP_PROTO(struct backing_dev_info *bdi, int written),
-
-	TP_ARGS(bdi, written),
-
-	TP_STRUCT__entry(
-		__array(char,	name, 32)
-		__field(int,	written)
-	),
-
-	TP_fast_assign(
-		strncpy(__entry->name, dev_name(bdi->dev), 32);
-		__entry->written = written;
-	),
-
-	TP_printk("bdi %s written %d",
-		  __entry->name,
-		  __entry->written
-	)
-);
 
 DECLARE_EVENT_CLASS(wbc_class,
 	TP_PROTO(struct writeback_control *wbc, struct backing_dev_info *bdi),
@@ -187,9 +172,9 @@ DEFINE_WBC_EVENT(wbc_writepage);
 
 TRACE_EVENT(writeback_queue_io,
 	TP_PROTO(struct bdi_writeback *wb,
-		 unsigned long *older_than_this,
+		 struct wb_writeback_work *work,
 		 int moved),
-	TP_ARGS(wb, older_than_this, moved),
+	TP_ARGS(wb, work, moved),
 	TP_STRUCT__entry(
 		__array(char,		name, 32)
 		__field(unsigned long,	older)
@@ -198,6 +183,7 @@ TRACE_EVENT(writeback_queue_io,
 		__field(int,		reason)
 	),
 	TP_fast_assign(
+		unsigned long *older_than_this = work->older_than_this;
 		strncpy(__entry->name, dev_name(wb->bdi->dev), 32);
 		__entry->older	= older_than_this ?  *older_than_this : 0;
 		__entry->age	= older_than_this ?
@@ -210,7 +196,8 @@ TRACE_EVENT(writeback_queue_io,
 		__entry->older,	/* older_than_this in jiffies */
 		__entry->age,	/* older_than_this in relative milliseconds */
 		__entry->moved,
-		wb_reason_name[__entry->reason])
+		__print_symbolic(__entry->reason, WB_WORK_REASON)
+	)
 );
 
 TRACE_EVENT(global_dirty_state,
@@ -259,15 +246,24 @@ TRACE_EVENT(global_dirty_state,
 	)
 );
 
-DECLARE_EVENT_CLASS(writeback_congest_waited_template,
+#define KBps(x)			((x) << (PAGE_SHIFT - 10))
 
-	TP_PROTO(unsigned int usec_timeout, unsigned int usec_delayed),
+TRACE_EVENT(bdi_dirty_ratelimit,
 
-	TP_ARGS(usec_timeout, usec_delayed),
+	TP_PROTO(struct backing_dev_info *bdi,
+		 unsigned long dirty_rate,
+		 unsigned long task_ratelimit),
+
+	TP_ARGS(bdi, dirty_rate, task_ratelimit),
 
 	TP_STRUCT__entry(
-		__field(	unsigned int,	usec_timeout	)
-		__field(	unsigned int,	usec_delayed	)
+		__array(char,		bdi, 32)
+		__field(unsigned long,	write_bw)
+		__field(unsigned long,	avg_write_bw)
+		__field(unsigned long,	dirty_rate)
+		__field(unsigned long,	dirty_ratelimit)
+		__field(unsigned long,	task_ratelimit)
+		__field(unsigned long,	balanced_dirty_ratelimit)
 	),
 
 	TP_fast_assign(
@@ -281,23 +277,18 @@ DECLARE_EVENT_CLASS(writeback_congest_waited_template,
 					  KBps(bdi->balanced_dirty_ratelimit);
 	),
 
-	TP_printk("usec_timeout=%u usec_delayed=%u",
-			__entry->usec_timeout,
-			__entry->usec_delayed)
-);
-
-DEFINE_EVENT(writeback_congest_waited_template, writeback_congestion_wait,
-
-	TP_PROTO(unsigned int usec_timeout, unsigned int usec_delayed),
-
-	TP_ARGS(usec_timeout, usec_delayed)
-);
-
-DEFINE_EVENT(writeback_congest_waited_template, writeback_wait_iff_congested,
-
-	TP_PROTO(unsigned int usec_timeout, unsigned int usec_delayed),
-
-	TP_ARGS(usec_timeout, usec_delayed)
+	TP_printk("bdi %s: "
+		  "write_bw=%lu awrite_bw=%lu dirty_rate=%lu "
+		  "dirty_ratelimit=%lu task_ratelimit=%lu "
+		  "balanced_dirty_ratelimit=%lu",
+		  __entry->bdi,
+		  __entry->write_bw,		/* write bandwidth */
+		  __entry->avg_write_bw,	/* avg write bandwidth */
+		  __entry->dirty_rate,		/* bdi dirty rate */
+		  __entry->dirty_ratelimit,	/* base ratelimit */
+		  __entry->task_ratelimit, /* ratelimit with position control */
+		  __entry->balanced_dirty_ratelimit /* the balanced ratelimit */
+	)
 );
 
 TRACE_EVENT(balance_dirty_pages,
@@ -381,8 +372,42 @@ TRACE_EVENT(balance_dirty_pages,
 	  )
 );
 
-DECLARE_EVENT_CLASS(writeback_single_inode_template,
+DECLARE_EVENT_CLASS(writeback_congest_waited_template,
 
+	TP_PROTO(unsigned int usec_timeout, unsigned int usec_delayed),
+
+	TP_ARGS(usec_timeout, usec_delayed),
+
+	TP_STRUCT__entry(
+		__field(	unsigned int,	usec_timeout	)
+		__field(	unsigned int,	usec_delayed	)
+	),
+
+	TP_fast_assign(
+		__entry->usec_timeout	= usec_timeout;
+		__entry->usec_delayed	= usec_delayed;
+	),
+
+	TP_printk("usec_timeout=%u usec_delayed=%u",
+			__entry->usec_timeout,
+			__entry->usec_delayed)
+);
+
+DEFINE_EVENT(writeback_congest_waited_template, writeback_congestion_wait,
+
+	TP_PROTO(unsigned int usec_timeout, unsigned int usec_delayed),
+
+	TP_ARGS(usec_timeout, usec_delayed)
+);
+
+DEFINE_EVENT(writeback_congest_waited_template, writeback_wait_iff_congested,
+
+	TP_PROTO(unsigned int usec_timeout, unsigned int usec_delayed),
+
+	TP_ARGS(usec_timeout, usec_delayed)
+);
+
+DECLARE_EVENT_CLASS(writeback_single_inode_template,
 
 	TP_PROTO(struct inode *inode,
 		 struct writeback_control *wbc,
@@ -403,7 +428,7 @@ DECLARE_EVENT_CLASS(writeback_single_inode_template,
 
 	TP_fast_assign(
 		strncpy(__entry->name,
-			dev_name(inode->i_mapping->backing_dev_info->dev), 32);
+			dev_name(inode_to_bdi(inode)->dev), 32);
 		__entry->ino		= inode->i_ino;
 		__entry->state		= inode->i_state;
 		__entry->dirtied_when	= inode->dirtied_when;

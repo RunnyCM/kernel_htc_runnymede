@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2011, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2010-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -62,6 +62,8 @@ static DEFINE_PER_CPU(struct cp_params, cp_param)
 static struct sysdev_class cpaccess_sysclass = {
 	.name = "cpaccess",
 };
+
+void cpaccess_dummy_inst(void);
 
 #ifdef CONFIG_ARCH_MSM_KRAIT
 /*
@@ -143,9 +145,13 @@ static void do_il2_rw(char *str_tmp)
  */
 static noinline unsigned long cpaccess_dummy(unsigned long write_val)
 {
-	asm("mrc p15, 0, r0, c0, c0, 0\n\t");
-	asm("bx	lr\n\t");
-	return 0xBEEF;
+	unsigned long ret = 0xBEEF;
+
+	asm volatile (".globl cpaccess_dummy_inst\n"
+			"cpaccess_dummy_inst:\n\t"
+			"mrc p15, 0, %0, c0, c0, 0\n\t" : "=r" (ret) :
+				"r" (write_val));
+	return ret;
 } __attribute__((aligned(32)))
 
 /*
@@ -195,7 +201,7 @@ static unsigned long do_cpregister_rw(int write)
 	 * Grab address of the Dummy function, write the MRC/MCR
 	 * instruction, ensuring cache coherency.
 	 */
-	p_opcode = (unsigned long *)&cpaccess_dummy;
+	p_opcode = (unsigned long *)&cpaccess_dummy_inst;
 	mem_text_write_kernel_word(p_opcode, opcode);
 
 #ifdef CONFIG_SMP
@@ -217,16 +223,11 @@ static int get_register_params(char *str_tmp)
 	unsigned long op1, op2, crn, crm, cp = 15, write_value, il2index;
 	char rw;
 	int cnt = 0;
-	char *str = strsep(&str_tmp, ":");
 
 	il2index = 0;
-	strncpy(type, !str?"":str , TYPE_MAX_CHARACTERS);
+	strncpy(type, strsep(&str_tmp, ":"), TYPE_MAX_CHARACTERS);
 
 	if (strncasecmp(type, "C", TYPE_MAX_CHARACTERS) == 0) {
-		if (!str_tmp) {
-			pr_err("str_tmp is null.\n");
-			return -EINVAL;
-		}
 
 		sscanf(str_tmp, "%lu:%lu:%lu:%lu:%lu:%c:%lx:%d",
 			&cp, &op1, &crn, &crm, &op2, &rw, &write_value, &cpu);

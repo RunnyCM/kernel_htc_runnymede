@@ -5,9 +5,9 @@
  * Copyright (C) 2003 Al Borchers (alborchers@steinerpoint.com)
  * Copyright (C) 2008 David Brownell
  * Copyright (C) 2008 by Nokia Corporation
- * Copyright (c) 2011, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2011, The Linux Foundation. All rights reserved.
  *
- * This program from the Code Aurora Forum is free software; you can
+ * This program from The Linux Foundation is free software; you can
  * redistribute it and/or modify it under the GNU General Public License
  * version 2 and only version 2 as published by the Free Software Foundation.
  * The original work available from [kernel.org] is subject to the notice below.
@@ -232,7 +232,7 @@ int gsdio_write(struct gsdio_port *port, struct usb_request *req)
 {
 	unsigned	avail;
 	char		*packet;
-	unsigned	size;
+	unsigned	size = req->actual;
 	unsigned	n;
 	int		ret = 0;
 
@@ -248,8 +248,6 @@ int gsdio_write(struct gsdio_port *port, struct usb_request *req)
 		return -ENODEV;
 	}
 
-	size = req->actual;
-	packet = req->buf;
 	pr_debug("%s: port:%p port#%d req:%p actual:%d n_read:%d\n",
 			__func__, port, port->port_num, req,
 			req->actual, port->n_read);
@@ -536,20 +534,6 @@ void gsdio_tx_pull(struct work_struct *w)
 			goto tx_pull_end;
 		}
 
-		/* Do not send data if DTR is not set */
-		if (!(port->cbits_to_modem & TIOCM_DTR)) {
-			pr_info("%s: DTR low. flush %d bytes.", __func__, avail);
-			/* check if usb is still active */
-			if (!port->port_usb) {
-				gsdio_free_req(in, req);
-			} else {
-				list_add(&req->list, pool);
-				port->wp_len++;
-			}
-			goto tx_pull_end;
-		}
-
-
 		req->length = avail;
 
 		spin_unlock_irq(&port->port_lock);
@@ -655,10 +639,11 @@ void gsdio_ctrl_wq(struct work_struct *w)
 			port->cbits_to_modem, ~(port->cbits_to_modem));
 }
 
-void gsdio_ctrl_notify_modem(struct gserial *gser, u8 portno, int ctrl_bits)
+void gsdio_ctrl_notify_modem(void *gptr, u8 portno, int ctrl_bits)
 {
 	struct gsdio_port *port;
 	int temp;
+	struct gserial *gser = gptr;
 
 	if (portno >= n_sdio_ports) {
 		pr_err("%s: invalid portno#%d\n", __func__, portno);
@@ -946,7 +931,7 @@ int gsdio_connect(struct gserial *gser, u8 portno)
 	gser->notify_modem = gsdio_ctrl_notify_modem;
 	spin_unlock_irqrestore(&port->port_lock, flags);
 
-	ret = usb_ep_enable(gser->in, gser->in_desc);
+	ret = usb_ep_enable(gser->in);
 	if (ret) {
 		pr_err("%s: failed to enable in ep w/ err:%d\n",
 					__func__, ret);
@@ -955,7 +940,7 @@ int gsdio_connect(struct gserial *gser, u8 portno)
 	}
 	gser->in->driver_data = port;
 
-	ret = usb_ep_enable(gser->out, gser->out_desc);
+	ret = usb_ep_enable(gser->out);
 	if (ret) {
 		pr_err("%s: failed to enable in ep w/ err:%d\n",
 					__func__, ret);
@@ -1005,8 +990,10 @@ void gsdio_disconnect(struct gserial *gser, u8 portno)
 
 	/* disable endpoints, aborting down any active I/O */
 	usb_ep_disable(gser->out);
+	gser->out->driver_data = NULL;
 
 	usb_ep_disable(gser->in);
+	gser->in->driver_data = NULL;
 
 	spin_lock_irqsave(&port->port_lock, flags);
 	gsdio_free_requests(gser->out, &port->read_pool);
@@ -1146,26 +1133,14 @@ int gsdio_setup(struct usb_gadget *g, unsigned count)
 
 	for (i = 0; i < count; i++) {
 		mutex_init(&sdio_ports[i].lock);
-		n_sdio_ports++;
 		ret = gsdio_port_alloc(i, &coding, sport_info + i);
+		n_sdio_ports++;
 		if (ret) {
 			n_sdio_ports--;
 			pr_err("%s: sdio logical port allocation failed\n",
 					__func__);
 			goto free_sdio_ports;
 		}
-
-#ifdef DEBUG
-		/* REVISIT: create one file per port
-		 * or do not create any file
-		 */
-		if (i == 0) {
-			ret = device_create_file(&g->dev, &dev_attr_input);
-			if (ret)
-				pr_err("%s: unable to create device file\n",
-						__func__);
-		}
-#endif
 
 	}
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2009, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -23,12 +23,7 @@
 
 enum {
 	OEM_RAPI_CLIENT_EVENT_NONE = 0,
-	OEM_RAPI_CLIENT_EVENT_SSD_START = 2000,
-	OEM_RAPI_CLIENT_EVENT_WIDEVINE_READ_KEYBOX,
-	OEM_RAPI_CLIENT_EVENT_WIDEVINE_WRITE_KEYBOX,
-	OEM_RAPI_CLIENT_EVENT_WIDEVINE_READ_DEVICE_ID,
-	OEM_RAPI_CLIENT_EVENT_SDSERVICE_ENC,
-	OEM_RAPI_CLIENT_EVENT_SDSERVICE_DEC,
+
 	/*
 	 * list of oem rapi client events
 	 */
