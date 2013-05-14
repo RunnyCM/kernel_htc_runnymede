@@ -50,21 +50,21 @@ static struct mutex audio_2v85_usage_lock;
 static struct q5v2_hw_info q5v2_audio_hw[Q5V2_HW_COUNT] = {
 	[Q5V2_HW_HANDSET] = {
 		.max_gain[VOC_NB_INDEX] = 0,
-		.min_gain[VOC_NB_INDEX] = 0,
+		.min_gain[VOC_NB_INDEX] = -500,
 		.max_gain[VOC_WB_INDEX] = 0,
-		.min_gain[VOC_WB_INDEX] = 0,
+		.min_gain[VOC_WB_INDEX] = -500,
 	},
 	[Q5V2_HW_HEADSET] = {
 		.max_gain[VOC_NB_INDEX] = 0,
-		.min_gain[VOC_NB_INDEX] = 0,
+		.min_gain[VOC_NB_INDEX] = -500,
 		.max_gain[VOC_WB_INDEX] = 0,
-		.min_gain[VOC_WB_INDEX] = 0,
+		.min_gain[VOC_WB_INDEX] = -500,
 	},
 	[Q5V2_HW_SPEAKER] = {
 		.max_gain[VOC_NB_INDEX] = 0,
-		.min_gain[VOC_NB_INDEX] = 0,
+		.min_gain[VOC_NB_INDEX] = -500,
 		.max_gain[VOC_WB_INDEX] = 0,
-		.min_gain[VOC_WB_INDEX] = 0,
+		.min_gain[VOC_WB_INDEX] = -500,
 	},
 	[Q5V2_HW_BT_SCO] = {
 		.max_gain[VOC_NB_INDEX] = 0,
@@ -80,9 +80,9 @@ static struct q5v2_hw_info q5v2_audio_hw[Q5V2_HW_COUNT] = {
 	},
 	[Q5V2_HW_HS_SPKR] = {
 		.max_gain[VOC_NB_INDEX] = -500,
-		.min_gain[VOC_NB_INDEX] = -2000,
+		.min_gain[VOC_NB_INDEX] = -2100,
 		.max_gain[VOC_WB_INDEX] = -500,
-		.min_gain[VOC_WB_INDEX] = -2000,
+		.min_gain[VOC_WB_INDEX] = -2100,
 	},
 	[Q5V2_HW_USB_HS] = {
 		.max_gain[VOC_NB_INDEX] = 1000,
@@ -92,9 +92,9 @@ static struct q5v2_hw_info q5v2_audio_hw[Q5V2_HW_COUNT] = {
 	},
 	[Q5V2_HW_HAC] = {
 		.max_gain[VOC_NB_INDEX] = 100,
-		.min_gain[VOC_NB_INDEX] = -1900,
+		.min_gain[VOC_NB_INDEX] = -2000,
 		.max_gain[VOC_WB_INDEX] = 100,
-		.min_gain[VOC_WB_INDEX] = -1900,
+		.min_gain[VOC_WB_INDEX] = -2000,
 	},
 };
 
@@ -398,7 +398,7 @@ int runnymede_support_back_mic(void)
 void runnymede_get_acoustic_tables(struct acoustic_tables *tb)
 {
 		strcpy(tb->aic3254,
-				"IOTable.txt\0");
+				"AIC3254_REG_DualMic.csv\0");
 		strcpy(tb->aic3254_dsp,
 				"CodecDSPID.txt\0");
 }
