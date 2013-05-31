@@ -85,19 +85,19 @@ u32 wl_dbg_level = WL_DBG_ERR;
  * All the chnages in world regulatory domain are to be done here.
  */
 static const struct ieee80211_regdomain brcm_regdom = {
-	.n_reg_rules = 4,
+	.n_reg_rules = 5,
 	.alpha2 =  "99",
 	.reg_rules = {
 		/* IEEE 802.11b/g, channels 1..11 */
-		REG_RULE(2412-10, 2472+10, 40, 6, 20, 0),
+		REG_RULE(2412-10, 2462+10, 40, 6, 20, 0),
 		/* IEEE 802.11b/g, channels 12..13. No HT40
 		 * channel fits here.
 		 */
-		/* If any */
-		/*
-		 * IEEE 802.11 channel 14 - is for JP only,
-		 * we need cfg80211 to allow it (reg_flags = 0); so that
-		 * hostapd could request auto channel by sending down ch 14
+		REG_RULE(2467-10, 2472+10, 20, 6, 20,
+		NL80211_RRF_PASSIVE_SCAN |
+		NL80211_RRF_NO_IBSS),
+		/* IEEE 802.11 channel 14 - Only JP enables
+		 * this and for 802.11b only
 		 */
 		REG_RULE(2484-10, 2484+10, 20, 6, 20,
 		NL80211_RRF_PASSIVE_SCAN |
@@ -437,7 +437,7 @@ static s8 wl_dbg_estr[][WL_DBG_ESTR_MAX] = {
 	.hw_value		= (_channel),			\
 	.flags			= (_flags),			\
 	.max_antenna_gain	= 0,				\
-	.max_power		= 30,				\
+	.max_power		= 35,				\
 }
 
 #define CHAN5G(_channel, _flags) {				\
@@ -446,7 +446,7 @@ static s8 wl_dbg_estr[][WL_DBG_ESTR_MAX] = {
 	.hw_value		= (_channel),			\
 	.flags			= (_flags),			\
 	.max_antenna_gain	= 0,				\
-	.max_power		= 30,				\
+	.max_power		= 35,				\
 }
 
 #define RATE_TO_BASE100KBPS(rate)   (((rate) * 10) / 2)
