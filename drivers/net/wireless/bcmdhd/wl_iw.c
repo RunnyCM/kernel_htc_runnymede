@@ -968,7 +968,7 @@ wl_iw_get_power_mode(
 )
 {
 	int error = 0;
-	int pm_local;
+	int pm_local = PM_FAST;
 	char *p = extra;
 
 	error = dev_wlc_ioctl(dev, WLC_GET_PM, &pm_local, sizeof(pm_local));
