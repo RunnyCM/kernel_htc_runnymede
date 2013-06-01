@@ -437,7 +437,7 @@ static s8 wl_dbg_estr[][WL_DBG_ESTR_MAX] = {
 	.hw_value		= (_channel),			\
 	.flags			= (_flags),			\
 	.max_antenna_gain	= 0,				\
-	.max_power		= 35,				\
+	.max_power		= 30,				\
 }
 
 #define CHAN5G(_channel, _flags) {				\
@@ -446,7 +446,7 @@ static s8 wl_dbg_estr[][WL_DBG_ESTR_MAX] = {
 	.hw_value		= (_channel),			\
 	.flags			= (_flags),			\
 	.max_antenna_gain	= 0,				\
-	.max_power		= 35,				\
+	.max_power		= 30,				\
 }
 
 #define RATE_TO_BASE100KBPS(rate)   (((rate) * 10) / 2)
